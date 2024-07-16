@@ -1,15 +1,17 @@
+import { ColDef, ColGroupDef } from "ag-grid-community";
 import clsx, { ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { ADJECTIVES, DESCRIPTIONS, NOUNS } from "../flow_constants";
-import { APIDataType, TemplateVariableType } from "../types/api";
+import TableAutoCellRender from "../components/tableComponent/components/tableAutoCellRender";
+import { MESSAGES_TABLE_ORDER, MODAL_CLASSES } from "../constants/constants";
+import { APIDataType, InputFieldType, VertexDataTypeAPI } from "../types/api";
 import {
-  IVarHighlightType,
   groupedObjType,
+  nodeGroupedObjType,
   tweakType,
 } from "../types/components";
-import { FlowType, NodeType } from "../types/flow";
-import { TabsState } from "../types/tabs";
-import { buildTweaks } from "./reactflowUtils";
+import { NodeType } from "../types/flow";
+import { FlowState } from "../types/tabs";
+import { isErrorLog } from "../types/utils/typeCheckingUtils";
 
 export function classNames(...classes: Array<string>): string {
   return classes.filter(Boolean).join(" ");
@@ -53,13 +55,18 @@ export function normalCaseToSnakeCase(str: string): string {
     .join("_");
 }
 
-export function toTitleCase(str: string): string {
+export function toTitleCase(
+  str: string | undefined,
+  isNodeField?: boolean,
+): string {
+  if (!str) return "";
   let result = str
     .split("_")
     .map((word, index) => {
+      if (isNodeField) return word;
       if (index === 0) {
         return checkUpperWords(
-          word[0].toUpperCase() + word.slice(1).toLowerCase()
+          word[0].toUpperCase() + word.slice(1).toLowerCase(),
         );
       }
       return checkUpperWords(word.toLowerCase());
@@ -69,9 +76,10 @@ export function toTitleCase(str: string): string {
   return result
     .split("-")
     .map((word, index) => {
+      if (isNodeField) return word;
       if (index === 0) {
         return checkUpperWords(
-          word[0].toUpperCase() + word.slice(1).toLowerCase()
+          word[0].toUpperCase() + word.slice(1).toLowerCase(),
         );
       }
       return checkUpperWords(word.toLowerCase());
@@ -90,158 +98,8 @@ export function checkUpperWords(str: string): string {
   return words.join(" ");
 }
 
-export const isWrappedWithClass = (event: any, className: string | undefined) =>
-  event.target.closest(`.${className}`);
-
-export function groupByFamily(
-  data: APIDataType,
-  baseClasses: string,
-  left: boolean,
-  flow?: NodeType[]
-): groupedObjType[] {
-  const baseClassesSet = new Set(baseClasses.split("\n"));
-  let arrOfPossibleInputs: Array<{
-    category: string;
-    nodes: string[];
-    full: boolean;
-  }> = [];
-  let arrOfPossibleOutputs: Array<{
-    category: string;
-    nodes: string[];
-    full: boolean;
-  }> = [];
-  let checkedNodes = new Map();
-  const excludeTypes = new Set([
-    "str",
-    "bool",
-    "float",
-    "code",
-    "prompt",
-    "file",
-    "int",
-  ]);
-
-  const checkBaseClass = (template: TemplateVariableType) =>
-    template.type &&
-    template.show &&
-    ((!excludeTypes.has(template.type) && baseClassesSet.has(template.type)) ||
-      (template.input_types &&
-        template.input_types.some((inputType) =>
-          baseClassesSet.has(inputType)
-        )));
-
-  if (flow) {
-    for (const node of flow) {
-      const nodeData = node.data;
-      const foundNode = checkedNodes.get(nodeData.type);
-      checkedNodes.set(nodeData.type, {
-        hasBaseClassInTemplate:
-          foundNode?.hasBaseClassInTemplate ||
-          Object.values(nodeData.node!.template).some(checkBaseClass),
-        hasBaseClassInBaseClasses:
-          foundNode?.hasBaseClassInBaseClasses ||
-          nodeData.node!.base_classes.some((baseClass) =>
-            baseClassesSet.has(baseClass)
-          ),
-      });
-    }
-  }
-
-  for (const [d, nodes] of Object.entries(data)) {
-    let tempInputs: string[] = [],
-      tempOutputs: string[] = [];
-
-    for (const [n, node] of Object.entries(nodes!)) {
-      let foundNode = checkedNodes.get(n);
-      if (!foundNode) {
-        foundNode = {
-          hasBaseClassInTemplate: Object.values(node!.template).some(
-            checkBaseClass
-          ),
-          hasBaseClassInBaseClasses: node!.base_classes.some((baseClass) =>
-            baseClassesSet.has(baseClass)
-          ),
-        };
-        checkedNodes.set(n, foundNode);
-      }
-
-      if (foundNode.hasBaseClassInTemplate) tempInputs.push(n);
-      if (foundNode.hasBaseClassInBaseClasses) tempOutputs.push(n);
-    }
-
-    const totalNodes = Object.keys(nodes!).length;
-    if (tempInputs.length)
-      arrOfPossibleInputs.push({
-        category: d,
-        nodes: tempInputs,
-        full: tempInputs.length === totalNodes,
-      });
-    if (tempOutputs.length)
-      arrOfPossibleOutputs.push({
-        category: d,
-        nodes: tempOutputs,
-        full: tempOutputs.length === totalNodes,
-      });
-  }
-
-  return left
-    ? arrOfPossibleOutputs.map((output) => ({
-        family: output.category,
-        type: output.full ? "" : output.nodes.join(", "),
-      }))
-    : arrOfPossibleInputs.map((input) => ({
-        family: input.category,
-        type: input.full ? "" : input.nodes.join(", "),
-      }));
-}
-
-export function buildInputs(tabsState: TabsState, id: string): string {
-  return tabsState &&
-    tabsState[id] &&
-    tabsState[id].formKeysData &&
-    tabsState[id].formKeysData.input_keys &&
-    Object.keys(tabsState[id].formKeysData.input_keys!).length > 0
-    ? JSON.stringify(tabsState[id].formKeysData.input_keys)
-    : '{"input": "message"}';
-}
-
-export function getRandomElement<T>(array: T[]): T {
-  return array[Math.floor(Math.random() * array.length)];
-}
-export function getRandomDescription(): string {
-  return getRandomElement(DESCRIPTIONS);
-}
-
-export function getRandomName(
-  retry: number = 0,
-  noSpace: boolean = false,
-  maxRetries: number = 3
-): string {
-  const left: string[] = ADJECTIVES;
-  const right: string[] = NOUNS;
-
-  const lv = getRandomElement(left);
-  const rv = getRandomElement(right);
-
-  // Condition to avoid "boring wozniak"
-  if (lv === "boring" && rv === "wozniak") {
-    if (retry < maxRetries) {
-      return getRandomName(retry + 1, noSpace, maxRetries);
-    } else {
-      console.warn("Max retries reached, returning as is");
-    }
-  }
-
-  // Append a suffix if retrying and noSpace is true
-  if (retry > 0 && noSpace) {
-    const retrySuffix = Math.floor(Math.random() * 10);
-    return `${lv}_${rv}${retrySuffix}`;
-  }
-
-  // Construct the final name
-  let final_name = noSpace ? `${lv}_${rv}` : `${lv} ${rv}`;
-  // Return title case final name
-  return toTitleCase(final_name);
+export function buildInputs(): string {
+  return '{"input_value": "message"}';
 }
 
 export function getRandomKeyByssmm(): string {
@@ -249,11 +107,6 @@ export function getRandomKeyByssmm(): string {
   const seconds = String(now.getSeconds()).padStart(2, "0");
   const milliseconds = String(now.getMilliseconds()).padStart(3, "0");
   return seconds + milliseconds + Math.abs(Math.floor(Math.random() * 10001));
-}
-
-export function varHighlightHTML({ name }: IVarHighlightType): string {
-  const html = `<span class="font-semibold chat-message-highlight">{${name}}</span>`;
-  return html;
 }
 
 export function buildTweakObject(tweak: tweakType) {
@@ -272,256 +125,349 @@ export function buildTweakObject(tweak: tweakType) {
 
 /**
  * Function to get Chat Input Field
- * @param {FlowType} flow - The current flow.
- * @param {TabsState} tabsState - The current tabs state.
+ * @param {FlowsState} tabsState - The current tabs state.
  * @returns {string} - The chat input field
  */
-export function getChatInputField(flow: FlowType, tabsState?: TabsState) {
+export function getChatInputField(flowState?: FlowState) {
   let chat_input_field = "text";
 
-  if (
-    tabsState &&
-    tabsState[flow.id] &&
-    tabsState[flow.id].formKeysData &&
-    tabsState[flow.id].formKeysData.input_keys
-  ) {
-    chat_input_field = Object.keys(
-      tabsState[flow.id].formKeysData.input_keys!
-    )[0];
+  if (flowState && flowState.input_keys) {
+    chat_input_field = Object.keys(flowState.input_keys!)[0];
   }
   return chat_input_field;
 }
 
-/**
- * Function to get the python code for the API
- * @param {string} flowId - The id of the flow
- * @returns {string} - The python code
- */
-export function getPythonApiCode(
-  flow: FlowType,
-  isAuth: boolean,
-  tweak?: any[],
-  tabsState?: TabsState
-): string {
-  const flowId = flow.id;
+export function getOutputIds(flow) {
+  const nodes = flow.data!.nodes;
 
-  // create a dictionary of node ids and the values is an empty dictionary
-  // flow.data.nodes.forEach((node) => {
-  //   node.data.id
-  // }
-  const tweaks = buildTweaks(flow);
-  const inputs = buildInputs(tabsState!, flow.id);
-  return `import requests
-from typing import Optional
+  const arrayOfOutputs = nodes.reduce((acc: string[], node) => {
+    if (node.data.type.toLowerCase().includes("output")) {
+      acc.push(node.id);
+    }
+    return acc;
+  }, []);
 
-BASE_API_URL = "${window.location.protocol}//${
-    window.location.host
-  }/api/v1/process"
-FLOW_ID = "${flowId}"
-# You can tweak the flow by adding a tweaks dictionary
-# e.g {"OpenAI-XXXXX": {"model_name": "gpt-4"}}
-TWEAKS = ${
-    tweak && tweak.length > 0
-      ? buildTweakObject(tweak)
-      : JSON.stringify(tweaks, null, 2)
-  }
+  const arrayOfOutputsJoin = arrayOfOutputs
+    .map((output) => `"${output}"`)
+    .join(", ");
 
-def run_flow(inputs: dict, flow_id: str, tweaks: Optional[dict] = None${
-    !isAuth ? `, apiKey: str=""` : ""
-  }) -> dict:
-    """
-    Run a flow with a given message and optional tweaks.
-
-    :param message: The message to send to the flow
-    :param flow_id: The ID of the flow to run
-    :param tweaks: Optional tweaks to customize the flow
-    :return: The JSON response from the flow
-    """
-    api_url = f"{BASE_API_URL}/{flow_id}"
-
-    payload = {"inputs": inputs}
-
-    if tweaks:
-        payload["tweaks"] = tweaks
-    ${!isAuth ? 'headers = {"api-key": apiKey}' : ""}
-    response = requests.post(api_url, json=payload,headers=headers)
-    return response.json()
-
-# Setup any tweaks you want to apply to the flow
-inputs = ${inputs}
-${!isAuth ? `api_key = "<your api key>"` : ""}
-print(run_flow(inputs, flow_id=FLOW_ID, tweaks=TWEAKS${
-    !isAuth ? `, apiKey=api_key` : ""
-  }))`;
+  return arrayOfOutputsJoin;
 }
 
-/**
- * Function to get the curl code for the API
- * @param {string} flowId - The id of the flow
- * @returns {string} - The curl code
- */
-export function getCurlCode(
-  flow: FlowType,
-  isAuth: boolean,
-  tweak?: any[],
-  tabsState?: TabsState
-): string {
-  const flowId = flow.id;
-  const tweaks = buildTweaks(flow);
-  const inputs = buildInputs(tabsState!, flow.id);
-
-  return `curl -X POST \\
-  ${window.location.protocol}//${
-    window.location.host
-  }/api/v1/process/${flowId} \\
-  -H 'Content-Type: application/json'\\
-  ${!isAuth ? `-H 'api-key: <your api key>'\\` : ""}
-  -d '{"inputs": ${inputs}, "tweaks": ${
-    tweak && tweak.length > 0
-      ? buildTweakObject(tweak)
-      : JSON.stringify(tweaks, null, 2)
-  }}'`;
+export function truncateLongId(id: string): string {
+  let [componentName, newId] = id.split("-");
+  if (componentName.length > 15) {
+    componentName = componentName.slice(0, 15);
+    componentName += "...";
+    return componentName + "-" + newId;
+  }
+  return id;
 }
 
-/**
- * Function to get the python code for the API
- * @param {string} flow - The current flow
- * @returns {string} - The python code
- */
-export function getPythonCode(
-  flow: FlowType,
-  tweak?: any[],
-  tabsState?: TabsState
-): string {
-  const flowName = flow.name;
-  const tweaks = buildTweaks(flow);
-  const inputs = buildInputs(tabsState!, flow.id);
-  return `from langflow import load_flow_from_json
-TWEAKS = ${
-    tweak && tweak.length > 0
-      ? buildTweakObject(tweak)
-      : JSON.stringify(tweaks, null, 2)
-  }
-flow = load_flow_from_json("${flowName}.json", tweaks=TWEAKS)
-# Now you can use it like any chain
-inputs = ${inputs}
-flow(inputs)`;
+export function extractIdFromLongId(id: string): string {
+  let [_, newId] = id.split("-");
+  return newId;
 }
 
-/**
- * Function to get the widget code for the API
- * @param {string} flow - The current flow.
- * @returns {string} - The widget code
- */
-export function getWidgetCode(
-  flow: FlowType,
-  isAuth: boolean,
-  tabsState?: TabsState
-): string {
-  const flowId = flow.id;
-  const flowName = flow.name;
-  const inputs = buildInputs(tabsState!, flow.id);
-  let chat_input_field = getChatInputField(flow, tabsState);
-
-  return `<script src="https://cdn.jsdelivr.net/gh/logspace-ai/langflow-embedded-chat@main/dist/build/static/js/bundle.min.js"></script>
-
-<!-- chat_inputs: Stringified JSON with all the input keys and its values. The value of the key that is defined
-as chat_input_field will be overwritten by the chat message.
-chat_input_field: Input key that you want the chat to send the user message with. -->
-<langflow-chat
-  window_title="${flowName}"
-  flow_id="${flowId}"
-  ${
-    tabsState![flow.id] && tabsState![flow.id].formKeysData
-      ? `chat_inputs='${inputs}'
-  chat_input_field="${chat_input_field}"
-  `
-      : ""
-  }host_url="http://localhost:7860"${
-    !isAuth
-      ? `
-  api_key="..."`
-      : ""
+export function truncateDisplayName(name: string): string {
+  if (name.length > 15) {
+    name = name.slice(0, 15);
+    name += "...";
   }
-  
-></langflow-chat>`;
+  return name;
 }
 
-export function tabsArray(codes: string[], method: number) {
-  if (!method) return;
-  if (method === 0) {
-    return [
-      {
-        name: "cURL",
-        mode: "bash",
-        image: "https://curl.se/logo/curl-symbol-transparent.png",
-        language: "sh",
-        code: codes[0],
-      },
-      {
-        name: "Python API",
-        mode: "python",
-        image:
-          "https://images.squarespace-cdn.com/content/v1/5df3d8c5d2be5962e4f87890/1628015119369-OY4TV3XJJ53ECO0W2OLQ/Python+API+Training+Logo.png?format=1000w",
-        language: "py",
-        code: codes[1],
-      },
-      {
-        name: "Python Code",
-        mode: "python",
-        image: "https://cdn-icons-png.flaticon.com/512/5968/5968350.png",
-        language: "py",
-        code: codes[2],
-      },
-      {
-        name: "Chat Widget HTML",
-        description:
-          "Insert this code anywhere in your &lt;body&gt; tag. To use with react and other libs, check our <a class='link-color' href='https://langflow.org/guidelines/widget'>documentation</a>.",
-        mode: "html",
-        image: "https://cdn-icons-png.flaticon.com/512/5968/5968350.png",
-        language: "py",
-        code: codes[3],
-      },
-    ];
+export function checkLocalStorageKey(key: string): boolean {
+  return localStorage.getItem(key) !== null;
+}
+
+export function IncrementObjectKey(
+  object: object,
+  key: string,
+): { newKey: string; increment: number } {
+  let count = 1;
+  const type = removeCountFromString(key);
+  let newKey = type + " " + `(${count})`;
+  while (object[newKey]) {
+    count++;
+    newKey = type + " " + `(${count})`;
   }
-  return [
-    {
-      name: "cURL",
-      mode: "bash",
-      image: "https://curl.se/logo/curl-symbol-transparent.png",
-      language: "sh",
-      code: codes[0],
-    },
-    {
-      name: "Python API",
-      mode: "python",
-      image:
-        "https://images.squarespace-cdn.com/content/v1/5df3d8c5d2be5962e4f87890/1628015119369-OY4TV3XJJ53ECO0W2OLQ/Python+API+Training+Logo.png?format=1000w",
-      language: "py",
-      code: codes[1],
-    },
-    {
-      name: "Python Code",
-      mode: "python",
-      language: "py",
-      image: "https://cdn-icons-png.flaticon.com/512/5968/5968350.png",
-      code: codes[2],
-    },
-    {
-      name: "Chat Widget HTML",
-      description:
-        "Insert this code anywhere in your &lt;body&gt; tag. To use with react and other libs, check our <a class='link-color' href='https://langflow.org/guidelines/widget'>documentation</a>.",
-      mode: "html",
-      image: "https://cdn-icons-png.flaticon.com/512/5968/5968350.png",
-      language: "py",
-      code: codes[3],
-    },
-    {
-      name: "Tweaks",
-      mode: "python",
-      image: "https://cdn-icons-png.flaticon.com/512/5968/5968350.png",
-      language: "py",
-      code: codes[4],
-    },
-  ];
+  return { newKey, increment: count };
+}
+
+export function removeCountFromString(input: string): string {
+  // Define a regex pattern to match the count in parentheses
+  const pattern = /\s*\(\w+\)\s*$/;
+
+  // Use the `replace` method to remove the matched pattern
+  const result = input.replace(pattern, "");
+
+  return result.trim(); // Trim any leading/trailing spaces
+}
+
+export function extractTypeFromLongId(id: string): string {
+  let [newId, _] = id.split("-");
+  return newId;
+}
+
+export function createRandomKey(key: string, uid: string): string {
+  return removeCountFromString(key) + ` (${uid})`;
+}
+
+export function groupByFamily(
+  data: APIDataType,
+  baseClasses: string,
+  left: boolean,
+  flow?: NodeType[],
+): groupedObjType[] {
+  const baseClassesSet = new Set(baseClasses.split("\n"));
+  let arrOfPossibleInputs: Array<{
+    category: string;
+    nodes: nodeGroupedObjType[];
+    full: boolean;
+    display_name?: string;
+  }> = [];
+  let arrOfPossibleOutputs: Array<{
+    category: string;
+    nodes: nodeGroupedObjType[];
+    full: boolean;
+    display_name?: string;
+  }> = [];
+  let checkedNodes = new Map();
+  const excludeTypes = new Set(["bool", "float", "code", "file", "int"]);
+
+  const checkBaseClass = (template: InputFieldType) => {
+    return (
+      template?.type &&
+      template?.show &&
+      ((!excludeTypes.has(template.type) &&
+        baseClassesSet.has(template.type)) ||
+        (template?.input_types &&
+          template?.input_types.some((inputType) =>
+            baseClassesSet.has(inputType),
+          )))
+    );
+  };
+
+  if (flow) {
+    // se existir o flow
+    for (const node of flow) {
+      // para cada node do flow
+      if (node!.data!.node!.flow || !node!.data!.node!.template) break; // não faz nada se o node for um group
+      const nodeData = node.data;
+
+      const foundNode = checkedNodes.get(nodeData.type); // verifica se o tipo do node já foi checado
+      checkedNodes.set(nodeData.type, {
+        hasBaseClassInTemplate:
+          foundNode?.hasBaseClassInTemplate ||
+          Object.values(nodeData.node!.template).some(checkBaseClass),
+        hasBaseClassInBaseClasses:
+          foundNode?.hasBaseClassInBaseClasses ||
+          nodeData.node!.base_classes?.some((baseClass) =>
+            baseClassesSet.has(baseClass),
+          ), //seta como anterior ou verifica se o node tem base class
+        displayName: nodeData.node?.display_name,
+      });
+    }
+  }
+
+  for (const [d, nodes] of Object.entries(data)) {
+    let tempInputs: nodeGroupedObjType[] = [],
+      tempOutputs: nodeGroupedObjType[] = [];
+
+    for (const [n, node] of Object.entries(nodes!)) {
+      let foundNode = checkedNodes.get(n);
+
+      if (!foundNode) {
+        foundNode = {
+          hasBaseClassInTemplate: Object.values(node!.template).some(
+            checkBaseClass,
+          ),
+          hasBaseClassInBaseClasses: node!.base_classes?.some((baseClass) =>
+            baseClassesSet.has(baseClass),
+          ),
+          displayName: node?.display_name,
+        };
+      }
+
+      if (foundNode.hasBaseClassInTemplate)
+        tempInputs.push({ node: n, displayName: foundNode.displayName });
+      if (foundNode.hasBaseClassInBaseClasses)
+        tempOutputs.push({ node: n, displayName: foundNode.displayName });
+    }
+
+    const totalNodes = Object.keys(nodes!).length;
+
+    if (tempInputs.length)
+      arrOfPossibleInputs.push({
+        category: d,
+        nodes: tempInputs,
+        full: tempInputs.length === totalNodes,
+      });
+    if (tempOutputs.length)
+      arrOfPossibleOutputs.push({
+        category: d,
+        nodes: tempOutputs,
+        full: tempOutputs.length === totalNodes,
+      });
+  }
+
+  return left
+    ? arrOfPossibleOutputs.map((output) => ({
+        family: output.category,
+        type: output.full
+          ? ""
+          : output.nodes.map((item) => item.node).join(", "),
+        display_name: "",
+      }))
+    : arrOfPossibleInputs.map((input) => ({
+        family: input.category,
+        type: input.full ? "" : input.nodes.map((item) => item.node).join(", "),
+        display_name: input.nodes.map((item) => item.displayName).join(", "),
+      }));
+}
+
+// this function is used to get the set of keys from an object
+export function getSetFromObject(obj: object, key?: string): Set<string> {
+  const set = new Set<string>();
+  if (key) {
+    for (const objKey in obj) {
+      set.add(obj[objKey][key]);
+    }
+  } else {
+    for (const key in obj) {
+      set.add(key);
+    }
+  }
+  return set;
+}
+
+export function freezeObject(obj: any) {
+  if (!obj) return obj;
+  return JSON.parse(JSON.stringify(obj));
+}
+export function isTimeStampString(str: string): boolean {
+  const timestampRegexA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3}Z)?$/;
+  const timestampRegexB = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{6})?$/;
+
+  return timestampRegexA.test(str) || timestampRegexB.test(str);
+}
+
+export function extractColumnsFromRows(
+  rows: object[],
+  mode: "intersection" | "union",
+  excludeColumns?: Array<string>,
+): (ColDef<any> | ColGroupDef<any>)[] {
+  let columnsKeys: { [key: string]: ColDef<any> | ColGroupDef<any> } = {};
+  if (rows.length === 0) {
+    return [];
+  }
+  function intersection() {
+    for (const key in rows[0]) {
+      columnsKeys[key] = {
+        headerName: key,
+        field: key,
+        cellRenderer: TableAutoCellRender,
+        filter: true,
+      };
+    }
+    for (const row of rows) {
+      for (const key in columnsKeys) {
+        if (!row[key]) {
+          delete columnsKeys[key];
+        }
+      }
+    }
+  }
+  function union() {
+    for (const row of rows) {
+      for (const key in row) {
+        columnsKeys[key] = {
+          headerName: key,
+          field: key,
+          filter: true,
+          cellRenderer: TableAutoCellRender,
+          suppressAutoSize: true,
+          tooltipField: key,
+        };
+      }
+    }
+  }
+
+  if (mode === "intersection") {
+    intersection();
+  } else {
+    union();
+  }
+
+  if (excludeColumns) {
+    for (const key of excludeColumns) {
+      delete columnsKeys[key];
+    }
+  }
+
+  return Object.values(columnsKeys);
+}
+
+export function isThereModal(): boolean {
+  const modal = document.body.getElementsByClassName(MODAL_CLASSES);
+  return modal.length > 0;
+}
+
+export function messagesSorter(a: any, b: any) {
+  const indexA = MESSAGES_TABLE_ORDER.indexOf(a.field);
+  const indexB = MESSAGES_TABLE_ORDER.indexOf(b.field);
+
+  // If the field is not in the MESSAGES_TABLE_ORDER, we can place it at the end.
+  const orderA = indexA === -1 ? MESSAGES_TABLE_ORDER.length : indexA;
+  const orderB = indexB === -1 ? MESSAGES_TABLE_ORDER.length : indexB;
+
+  return orderA - orderB;
+}
+
+export const logHasMessage = (
+  data: VertexDataTypeAPI,
+  outputName: string | undefined,
+) => {
+  if (!outputName) return;
+  const outputs = data?.outputs[outputName];
+  if (Array.isArray(outputs) && outputs.length > 1) {
+    return outputs.some((outputLog) => outputLog.message);
+  } else {
+    return outputs?.message;
+  }
+};
+
+export const logTypeIsUnknown = (
+  data: VertexDataTypeAPI,
+  outputName: string | undefined,
+) => {
+  if (!outputName) return;
+  const outputs = data?.outputs[outputName];
+  if (Array.isArray(outputs) && outputs.length > 1) {
+    return outputs.some((outputLog) => outputLog.type === "unknown");
+  } else {
+    return outputs?.type === "unknown";
+  }
+};
+
+export const logTypeIsError = (
+  data: VertexDataTypeAPI,
+  outputName: string | undefined,
+) => {
+  if (!outputName) return;
+  const outputs = data?.outputs[outputName];
+  if (Array.isArray(outputs) && outputs.length > 1) {
+    return outputs.some((log) => isErrorLog(log));
+  } else {
+    return isErrorLog(outputs);
+  }
+};
+
+export function isEndpointNameValid(name: string, maxLength: number): boolean {
+  return (
+    (/^[a-zA-Z0-9_-]+$/.test(name) && name.length <= maxLength) ||
+    // empty is also valid
+    name.length === 0
+  );
 }

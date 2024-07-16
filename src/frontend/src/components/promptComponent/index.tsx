@@ -1,10 +1,10 @@
 import { useEffect } from "react";
 
 import { TypeModal } from "../../constants/enums";
-import { postValidatePrompt } from "../../controllers/API";
 import GenericModal from "../../modals/genericModal";
 import { PromptAreaComponentType } from "../../types/components";
 import IconComponent from "../genericIconComponent";
+import { Button } from "../ui/button";
 
 export default function PromptAreaComponent({
   field_name,
@@ -14,58 +14,55 @@ export default function PromptAreaComponent({
   onChange,
   disabled,
   editNode = false,
-}: PromptAreaComponentType) {
+  id = "",
+  readonly = false,
+}: PromptAreaComponentType): JSX.Element {
   useEffect(() => {
-    if (disabled) {
-      onChange("");
+    if (disabled && value !== "") {
+      onChange("", undefined, true);
     }
   }, [disabled]);
 
-  useEffect(() => {
-    if (value !== "" && !editNode) {
-      postValidatePrompt(field_name!, value, nodeClass!).then((apiReturn) => {
-        if (apiReturn.data) {
-          setNodeClass!(apiReturn.data.frontend_node);
-          // need to update reactFlowInstance to re-render the nodes.
-        }
-      });
-    }
-  }, []);
-
   return (
-    <div className={disabled ? "pointer-events-none w-full " : " w-full"}>
+    <div className={disabled ? "pointer-events-none w-full" : "w-full"}>
       <GenericModal
+        id={id}
+        field_name={field_name}
+        readonly={readonly}
         type={TypeModal.PROMPT}
         value={value}
         buttonText="Check & Save"
         modalTitle="Edit Prompt"
-        setValue={(value: string) => {
-          onChange(value);
-        }}
+        setValue={onChange}
         nodeClass={nodeClass}
         setNodeClass={setNodeClass}
       >
-        <div className="flex w-full items-center">
-          <span
-            className={
-              editNode
-                ? "input-edit-node input-dialog"
-                : (disabled ? " input-disable text-ring " : "") +
-                  " primary-input text-muted-foreground "
-            }
-          >
-            {value !== "" ? value : "Type your prompt here..."}
-          </span>
-          {!editNode && (
-            <IconComponent
-              name="ExternalLink"
+        <Button unstyled className="w-full">
+          <div className="flex w-full items-center gap-3">
+            <span
+              id={id}
+              data-testid={id}
               className={
-                "icons-parameters-comp" +
-                (disabled ? " text-ring" : " hover:text-accent-foreground")
+                editNode
+                  ? "input-edit-node input-dialog"
+                  : (disabled ? "input-disable text-ring " : "") +
+                    " primary-input text-muted-foreground"
               }
-            />
-          )}
-        </div>
+            >
+              {value !== "" ? value : "Type your prompt here..."}
+            </span>
+            {!editNode && (
+              <IconComponent
+                id={id}
+                name="ExternalLink"
+                className={
+                  "icons-parameters-comp shrink-0" +
+                  (disabled ? " text-ring" : " hover:text-accent-foreground")
+                }
+              />
+            )}
+          </div>
+        </Button>
       </GenericModal>
     </div>
   );

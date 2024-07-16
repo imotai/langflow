@@ -1,197 +1,153 @@
-import _ from "lodash";
 import { useContext, useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { ErrorBoundary } from "react-error-boundary";
+import { useNavigate } from "react-router-dom";
 import "reactflow/dist/style.css";
 import "./App.css";
-
-import { ErrorBoundary } from "react-error-boundary";
-import ErrorAlert from "./alerts/error";
-import NoticeAlert from "./alerts/notice";
-import SuccessAlert from "./alerts/success";
-import CrashErrorComponent from "./components/CrashErrorComponent";
+import AlertDisplayArea from "./alerts/displayArea";
+import CrashErrorComponent from "./components/crashErrorComponent";
 import FetchErrorComponent from "./components/fetchErrorComponent";
 import LoadingComponent from "./components/loadingComponent";
 import {
   FETCH_ERROR_DESCRIPION,
   FETCH_ERROR_MESSAGE,
 } from "./constants/constants";
-import { alertContext } from "./contexts/alertContext";
-import { locationContext } from "./contexts/locationContext";
-import { TabsContext } from "./contexts/tabsContext";
-import { typesContext } from "./contexts/typesContext";
+import { AuthContext } from "./contexts/authContext";
+import { autoLogin } from "./controllers/API";
+import { useGetHealthQuery } from "./controllers/API/queries/health";
+import { useGetVersionQuery } from "./controllers/API/queries/version";
+import { setupAxiosDefaults } from "./controllers/API/utils";
+import useTrackLastVisitedPath from "./hooks/use-track-last-visited-path";
 import Router from "./routes";
+import { Case } from "./shared/components/caseComponent";
+import useAlertStore from "./stores/alertStore";
+import { useDarkStore } from "./stores/darkStore";
+import useFlowsManagerStore from "./stores/flowsManagerStore";
+import { useFolderStore } from "./stores/foldersStore";
 
 export default function App() {
-  let { setCurrent, setShowSideBar, setIsStackedOpen } =
-    useContext(locationContext);
-  let location = useLocation();
-  useEffect(() => {
-    setCurrent(location.pathname.replace(/\/$/g, "").split("/"));
-    setShowSideBar(true);
-    setIsStackedOpen(true);
-  }, [location.pathname, setCurrent, setIsStackedOpen, setShowSideBar]);
-  const { hardReset } = useContext(TabsContext);
+  useTrackLastVisitedPath();
+  const isLoading = useFlowsManagerStore((state) => state.isLoading);
+  const { isAuthenticated, login, setUserData, setAutoLogin, getUser } =
+    useContext(AuthContext);
+  const setLoading = useAlertStore((state) => state.setLoading);
+  const refreshStars = useDarkStore((state) => state.refreshStars);
+  const dark = useDarkStore((state) => state.dark);
+
+  useGetVersionQuery();
+
+  const isLoadingFolders = useFolderStore((state) => state.isLoadingFolders);
 
   const {
-    errorData,
-    errorOpen,
-    setErrorOpen,
-    noticeData,
-    noticeOpen,
-    setNoticeOpen,
-    successData,
-    successOpen,
-    setSuccessOpen,
-    setErrorData,
-    loading,
-    setLoading,
-  } = useContext(alertContext);
-  const navigate = useNavigate();
-  const { fetchError } = useContext(typesContext);
+    data: healthData,
+    isFetching: fetchingHealth,
+    isError: isErrorHealth,
+    refetch,
+  } = useGetHealthQuery();
 
-  // Initialize state variable for the list of alerts
-  const [alertsList, setAlertsList] = useState<
-    Array<{
-      type: string;
-      data: { title: string; list?: Array<string>; link?: string };
-      id: string;
-    }>
-  >([]);
-
-  // Use effect hook to update alertsList when a new alert is added
   useEffect(() => {
-    // If there is an error alert open with data, add it to the alertsList
-    if (errorOpen && errorData) {
-      if (
-        alertsList.length > 0 &&
-        JSON.stringify(alertsList[alertsList.length - 1].data) ===
-          JSON.stringify(errorData)
-      ) {
-        return;
-      }
-      setErrorOpen(false);
-      setAlertsList((old) => {
-        let newAlertsList = [
-          ...old,
-          { type: "error", data: _.cloneDeep(errorData), id: _.uniqueId() },
-        ];
-        return newAlertsList;
-      });
+    if (!dark) {
+      document.getElementById("body")!.classList.remove("dark");
+    } else {
+      document.getElementById("body")!.classList.add("dark");
     }
-    // If there is a notice alert open with data, add it to the alertsList
-    else if (noticeOpen && noticeData) {
-      if (
-        alertsList.length > 0 &&
-        JSON.stringify(alertsList[alertsList.length - 1].data) ===
-          JSON.stringify(noticeData)
-      ) {
-        return;
-      }
-      setNoticeOpen(false);
-      setAlertsList((old) => {
-        let newAlertsList = [
-          ...old,
-          { type: "notice", data: _.cloneDeep(noticeData), id: _.uniqueId() },
-        ];
-        return newAlertsList;
-      });
-    }
-    // If there is a success alert open with data, add it to the alertsList
-    else if (successOpen && successData) {
-      if (
-        alertsList.length > 0 &&
-        JSON.stringify(alertsList[alertsList.length - 1].data) ===
-          JSON.stringify(successData)
-      ) {
-        return;
-      }
-      setSuccessOpen(false);
-      setAlertsList((old) => {
-        let newAlertsList = [
-          ...old,
-          { type: "success", data: _.cloneDeep(successData), id: _.uniqueId() },
-        ];
-        return newAlertsList;
-      });
-    }
-  }, [
-    _,
-    errorData,
-    errorOpen,
-    noticeData,
-    noticeOpen,
-    setErrorOpen,
-    setNoticeOpen,
-    setSuccessOpen,
-    successData,
-    successOpen,
-  ]);
+  }, [dark]);
 
-  const removeAlert = (id: string) => {
-    setAlertsList((prevAlertsList) =>
-      prevAlertsList.filter((alert) => alert.id !== id)
-    );
+  useEffect(() => {
+    const abortController = new AbortController();
+    const isLoginPage = location.pathname.includes("login");
+
+    autoLogin(abortController.signal)
+      .then(async (user) => {
+        if (user && user["access_token"]) {
+          user["refresh_token"] = "auto";
+          login(user["access_token"]);
+          setUserData(user);
+          setAutoLogin(true);
+          fetchAllData();
+        }
+      })
+      .catch(async (error) => {
+        if (error.name !== "CanceledError") {
+          setAutoLogin(false);
+          if (isAuthenticated && !isLoginPage) {
+            getUser();
+            fetchAllData();
+          } else {
+            setLoading(false);
+            useFlowsManagerStore.setState({ isLoading: false });
+          }
+        }
+      });
+
+    /*
+      Abort the request as it isn't needed anymore, the component being
+      unmounted. It helps avoid, among other things, the well-known "can't
+      perform a React state update on an unmounted component" warning.
+    */
+    return () => abortController.abort();
+  }, []);
+  const fetchAllData = async () => {
+    setTimeout(async () => {
+      await Promise.all([refreshStars(), fetchData()]);
+    }, 1000);
   };
+
+  const fetchData = async () => {
+    return new Promise<void>(async (resolve, reject) => {
+      if (isAuthenticated) {
+        try {
+          await setupAxiosDefaults();
+          resolve();
+        } catch (error) {
+          console.error("Failed to fetch data:", error);
+          reject();
+        }
+      }
+    });
+  };
+
+  const isLoadingApplication = isLoading || isLoadingFolders;
 
   return (
     //need parent component with width and height
     <div className="flex h-full flex-col">
       <ErrorBoundary
         onReset={() => {
-          window.localStorage.removeItem("tabsData");
-          window.localStorage.clear();
-          hardReset();
-          window.location.href = window.location.href;
+          // any reset function
         }}
         FallbackComponent={CrashErrorComponent}
       >
-        {loading ? (
-          <div className="loading-page-panel">
-            {fetchError ? (
-              <FetchErrorComponent
-                description={FETCH_ERROR_DESCRIPION}
-                message={FETCH_ERROR_MESSAGE}
-              ></FetchErrorComponent>
-            ) : (
+        <>
+          {
+            <FetchErrorComponent
+              description={FETCH_ERROR_DESCRIPION}
+              message={FETCH_ERROR_MESSAGE}
+              openModal={
+                isErrorHealth ||
+                (healthData &&
+                  Object.values(healthData).some((value) => value !== "ok"))
+              }
+              setRetry={() => {
+                refetch();
+              }}
+              isLoadingHealth={fetchingHealth}
+            ></FetchErrorComponent>
+          }
+
+          <Case condition={isLoadingApplication}>
+            <div className="loading-page-panel">
               <LoadingComponent remSize={50} />
-            )}
-          </div>
-        ) : (
-          <>
+            </div>
+          </Case>
+
+          <Case condition={!isLoadingApplication}>
             <Router />
-          </>
-        )}
+          </Case>
+        </>
       </ErrorBoundary>
       <div></div>
-      <div className="app-div" style={{ zIndex: 999 }}>
-        {alertsList.map((alert) => (
-          <div key={alert.id}>
-            {alert.type === "error" ? (
-              <ErrorAlert
-                key={alert.id}
-                title={alert.data.title}
-                list={alert.data.list}
-                id={alert.id}
-                removeAlert={removeAlert}
-              />
-            ) : alert.type === "notice" ? (
-              <NoticeAlert
-                key={alert.id}
-                title={alert.data.title}
-                link={alert.data.link}
-                id={alert.id}
-                removeAlert={removeAlert}
-              />
-            ) : (
-              <SuccessAlert
-                key={alert.id}
-                title={alert.data.title}
-                id={alert.id}
-                removeAlert={removeAlert}
-              />
-            )}
-          </div>
-        ))}
+      <div className="app-div">
+        <AlertDisplayArea />
       </div>
     </div>
   );

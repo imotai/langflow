@@ -17,6 +17,9 @@ qdrant_storage
 .chroma
 .ruff_cache
 
+# PyCharm
+.idea/
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
@@ -166,6 +169,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.testmondata*
 
 # Translations
 *.mo
@@ -176,6 +180,8 @@ coverage.xml
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+*.db-shm
+*.db-wal
 
 # Flask stuff:
 instance/
@@ -254,4 +260,16 @@ langflow.db
 
 /tmp/*
 src/backend/langflow/frontend/
+src/backend/base/langflow/frontend/
 .docker
+scratchpad*
+chroma*/*
+stuff/*
+src/frontend/playwright-report/index.html
+*.bak
+prof/*
+
+src/frontend/temp
+*-shm
+*-wal
+.history

@@ -12,24 +12,31 @@ export default function CodeAreaComponent({
   nodeClass,
   dynamic,
   setNodeClass,
+  id = "",
+  readonly = false,
+  open,
+  setOpen,
 }: CodeAreaComponentType) {
   const [myValue, setMyValue] = useState(
-    typeof value == "string" ? value : JSON.stringify(value)
+    typeof value == "string" ? value : JSON.stringify(value),
   );
   useEffect(() => {
-    if (disabled) {
+    if (disabled && myValue !== "") {
       setMyValue("");
-      onChange("");
+      onChange("", undefined, true);
     }
-  }, [disabled, onChange]);
+  }, [disabled]);
 
   useEffect(() => {
     setMyValue(typeof value == "string" ? value : JSON.stringify(value));
   }, [value]);
 
   return (
-    <div className={disabled ? "pointer-events-none w-full " : " w-full"}>
+    <div className={disabled ? "pointer-events-none w-full" : "w-full"}>
       <CodeAreaModal
+        open={open}
+        setOpen={setOpen}
+        readonly={readonly}
         dynamic={dynamic}
         value={myValue}
         nodeClass={nodeClass}
@@ -39,13 +46,15 @@ export default function CodeAreaComponent({
           onChange(value);
         }}
       >
-        <div className="flex w-full items-center">
+        <div className="flex w-full items-center gap-3">
           <span
+            id={id}
+            data-testid={id}
             className={
               editNode
                 ? "input-edit-node input-dialog"
-                : (disabled ? " input-disable input-ring " : "") +
-                  " primary-input text-muted-foreground "
+                : (disabled ? "input-disable input-ring " : "") +
+                  " primary-input text-muted-foreground"
             }
           >
             {myValue !== "" ? myValue : "Type something..."}
@@ -54,7 +63,7 @@ export default function CodeAreaComponent({
             <IconComponent
               name="ExternalLink"
               className={
-                "icons-parameters-comp" +
+                "icons-parameters-comp shrink-0" +
                 (disabled ? " text-ring" : " hover:text-accent-foreground")
               }
             />
